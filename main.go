@@ -1,6 +1,5 @@
 package main
 
-import "C"
 import (
 	"fmt"
 	"os"
@@ -13,43 +12,86 @@ import (
 #include <pcre2.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 long  lens = 256;
-pcre2_code * compile_regex( char *pattern) {
-	printf("%s\n", pattern);
-   PCRE2_SIZE erroff;
-   int errorcode;
-   pcre2_code *re = pcre2_compile((PCRE2_SPTR)pattern, PCRE2_ZERO_TERMINATED, 0, &errorcode, &erroff, NULL);
-   if (re == NULL) {
-		printf("tttttttttttttttttttttttt\n");
-		PCRE2_UCHAR buffer[256];
-        pcre2_get_error_message(errorcode, buffer, sizeof(buffer));
-        printf("PCRE2 compilation failed at offset %lu: %u\n", (unsigned long)erroff, buffer[0]);
-		return NULL;
-   }
-	printf("rrrrrrrrrrrrrrrrrrrrrr\n");
-   return re;
-}
-
-int match_regex(pcre2_code  *re,  char *subject) {
+char * compile_regex_and_match( char *pattern,  char *subject) {
+	pcre2_code *re;
+	PCRE2_SIZE erroroffset;
 	PCRE2_SIZE *ovector;
-	PCRE2_SPTR s = (PCRE2_SPTR)subject;
-	PCRE2_SIZE len = strlen(subject);
+	int errornumber;
+	int rc;
 
-	printf("%s\n", subject);
-	pcre2_match_data *match_data = pcre2_match_data_create_from_pattern(re, NULL);
-	int rc = pcre2_match(re, s, len, 0, 0, match_data, NULL);
-	if (rc < 0){
-		switch(rc){
+	//PCRE2_SPTR p = (PCRE2_SPTR)pattern;
+	//PCRE2_SPTR s = (PCRE2_SPTR)subject;
+	PCRE2_SIZE len = strlen((char *)subject);
+
+
+	size_t subject_length;
+	pcre2_match_data *match_data;
+	printf("tttttttttt1\n");
+   	re = pcre2_compile(
+	  	(PCRE2_SPTR)pattern,
+		PCRE2_ZERO_TERMINATED,
+		0,
+		&errornumber,
+		&erroroffset,
+		NULL);
+
+	printf("tttttttttt2\n");
+	if (re == NULL)
+	{
+		//PCRE2_UCHAR buffer[256];
+		//pcre2_get_error_message(errornumber, buffer, sizeof(buffer));
+		printf("PCRE2 compilation failed at offset %d\n", (int)erroroffset);
+		//struct Result r = { -1, "PCRE2 compilation failed" };
+		//return &r;
+		errno = EINVAL;
+        return NULL;
+	}
+
+	printf("tttttttttt3\n");
+	match_data = pcre2_match_data_create_from_pattern(re, NULL);
+	printf("tttttttttt4\n");
+	rc = pcre2_match(
+		re,
+		(PCRE2_SPTR)subject,
+		subject_length,
+		0,
+		0,
+		match_data,
+		NULL);
+
+	printf("tttttttttt5\n");
+	if (rc < 0)
+	  {
+	  	switch(rc)
+			{
 			case PCRE2_ERROR_NOMATCH: printf("No match\n"); break;
 			default: printf("Matching error %d\n", rc); break;
-		}
+			}
 		pcre2_match_data_free(match_data);
 		pcre2_code_free(re);
-		return -1;
+		//struct Result r = { -1, "PCRE2 match failed" };
+		//return &r;
+
+		errno = EINVAL;
+        return NULL;
 	}
+	printf("tttttttttt6\n");
 	ovector = pcre2_get_ovector_pointer(match_data);
 	printf("\nMatch succeeded at offset %d\n", (int)ovector[0]);
-	return rc;
+	if (rc == 0)
+  		printf("ovector was not big enough for all the captured substrings\n");
+	pcre2_match_data_free(match_data);
+	pcre2_code_free(re);
+	PCRE2_SPTR substring_start = (PCRE2_SPTR)subject + ovector[0];
+	size_t substring_length = ovector[1] - ovector[0];
+
+	printf("---%2d: %.*s\n", 0, (int)substring_length, (char *)substring_start);
+
+	//struct Result r = { 0, (char *)substring_start };
+	//return &r;
+	return (char *)substring_start;
 }
 */
 import "C"
@@ -64,22 +106,16 @@ func main() {
 	// 编译正则表达式
 	cPattern := C.CString(pattern)
 	defer C.free(unsafe.Pointer(cPattern))
-	re := C.compile_regex(cPattern)
-	if re == nil {
-		os.Exit(1)
-	}
-	defer C.pcre2_code_free(re)
-	fmt.Println(re)
 
 	// 匹配目标文本
 	subject := C.CString(target)
 	defer C.free(unsafe.Pointer(subject))
-	rc := C.match_regex(re, subject)
-	if rc < 0 {
-		fmt.Printf("No match\n")
+
+	reC, cErr := C.compile_regex_and_match(cPattern, subject)
+	if cErr != nil {
 		os.Exit(1)
 	}
-	fmt.Println(rc)
+	fmt.Println(reC)
 	// 提取结果字符串
 	//matchData := make([]C.int, rc*2)
 	//rc = C.pcre2_get_ovector_pointer(*C.pcre2_match_data)
